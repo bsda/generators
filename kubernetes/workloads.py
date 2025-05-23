@@ -218,6 +218,23 @@ class Workload(KubernetesResource):
             }
         )
 
+    def add_checksum_annotations(self, secrets: dict, config_maps: dict):
+        # Only apply to Deployments, StatefulSets, and DaemonSets
+        if not isinstance(self, (Deployment, StatefulSet, DaemonSet)):
+            return
+
+        template = self.root.spec.template
+        template.metadata = template.get("metadata", {})
+        template.metadata.annotations = template.metadata.get("annotations", {})
+
+        for name, secret in secrets.items():
+            if hasattr(secret, "get_checksum"):
+                template.metadata.annotations[f"checksum/{name}"] = secret.get_checksum()
+
+        for name, config in config_maps.items():
+            if hasattr(config, "get_checksum"):
+                template.metadata.annotations[f"checksum/{name}"] = config.get_checksum()
+
 
 class CloudRunService(CloudRunResource):
     kind: str = "Service"
@@ -591,6 +608,20 @@ class Components(kgenlib.BaseStore):
         self._generate_and_add_multiple_objects(
             ComponentSecret, "secrets", workload=workload
         )
+
+        # Add checksum annotations to workload
+        if config.checksum_annotation:
+            secrets = {
+                o.object_name: o
+                for o in self.get_content_list()
+                if isinstance(o, ComponentSecret)
+            }
+            configs = {
+                o.object_name: o
+                for o in self.get_content_list()
+                if isinstance(o, ComponentConfig)
+            }
+            workload.add_checksum_annotations(secrets, configs)
 
         self._add_component(PodDisruptionBudget, "pdb_min_available", workload=workload)
         self._add_component(HorizontalPodAutoscaler, "hpa", workload=workload)

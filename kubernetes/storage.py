@@ -92,25 +92,26 @@ class SharedConfig(KubernetesResource):
         if value:
             self.add_item(key, value, request_encode=encode, stringdata=stringdata)
 
-    def versioning(self):
+    def compute_checksum(self):
         import json
+        """Compute a SHA256 hash from all relevant data fields."""
+        keys = ["data", "stringData", "binaryData"]
+        subset = {
+            k: v for k, v in self.root.to_dict().items()
+            if k in keys and v
+        }
+        canonical = json.dumps(subset, sort_keys=True)
+        return hashlib.sha256(canonical.encode()).hexdigest()
 
+    def get_checksum(self):
+        if not hasattr(self, "checksum"):
+            self.checksum = self.compute_checksum()
+        return self.checksum
+
+    def versioning(self):
         """Handle versioning for the resource."""
         if self.config.versioned:
-            keys_of_interest = ["data", "binaryData", "stringData"]
-            subset = {
-                key: value
-                for key, value in self.root.to_dict().items()
-                if key in keys_of_interest
-            }
-
-            # Create a sorted representation for the subset
-            canonical_representation = json.dumps(subset, sort_keys=True)
-
-            self.hash = hashlib.sha256(canonical_representation.encode()).hexdigest()[
-                :8
-            ]
-
+            self.hash = self.get_checksum()[:8]
             self.rendered_name = f"{self.name}-{self.hash}"
             self.root.metadata.name = self.rendered_name
             logger.debug(f"Versioning enabled for {self.name}. Using hash {self.hash}.")
@@ -131,6 +132,7 @@ class SharedConfig(KubernetesResource):
         if self.workload:
             self.add_label("name", self.workload.root.metadata.name)
             self.workload.add_volumes_for_object(self)
+
 
     def post_setup(self):
         """Method to be overridden in derived classes for extra setups."""

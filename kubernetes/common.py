@@ -386,6 +386,8 @@ class WorkloadConfigSpec(KubernetesResourceSpec, ContainerSpec):
     application: Optional[str] = None
     auto_pdb: bool = False
     backend_config: dict = {}
+    checksum_annotation: bool = False
+    frontend_config: dict = {}
     frontend_config: dict = {}
     cluster_role: Optional[Dict] = None
     containers: dict = {}
