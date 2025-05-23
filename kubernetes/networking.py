@@ -32,8 +32,8 @@ class Ingress(KubernetesResource):
         config = self.config
 
         if config.default_backend:
-            self.root.spec.backend.service.name = config.default_backend.get("name")
-            self.root.spec.backend.service.port = config.default_backend.get("port", 80)
+            self.root.spec.defaultBackend.service.name = config.default_backend.get("name")
+            self.root.spec.defaultBackend.service.port = config.default_backend.get("port", 80)
         if config.paths:
             host = config.host
             paths = config.paths
@@ -47,7 +47,7 @@ class Ingress(KubernetesResource):
 
 class GoogleManagedCertificate(KubernetesResource):
     kind: str = "ManagedCertificate"
-    api_version: str = "networking.gke.io/v1beta1"
+    api_version: str = "networking.gke.io/v1"
 
     def body(self):
         super().body()
@@ -410,6 +410,7 @@ class IngressComponent(kgenlib.BaseStore):
             )
             self.add(
                 GoogleManagedCertificate(
-                    name=certificate_name, config={"domains": domains}
+                    name=certificate_name, namespace=self.config.namespace,
+                    config={"domains": domains}
                 )
             )
