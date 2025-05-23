@@ -388,7 +388,6 @@ class WorkloadConfigSpec(KubernetesResourceSpec, ContainerSpec):
     backend_config: dict = {}
     checksum_annotation: bool = False
     frontend_config: dict = {}
-    frontend_config: dict = {}
     cluster_role: Optional[Dict] = None
     containers: dict = {}
     deployment_progress_deadline_seconds: int | None = None
