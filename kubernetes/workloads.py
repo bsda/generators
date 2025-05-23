@@ -24,7 +24,7 @@ from .common import (
     WorkloadTypes,
     kgenlib,
 )
-from .gke import BackendConfig
+from .gke import BackendConfig, FrontendConfig
 from .istio import IstioPolicy
 from .networking import NetworkPolicy, Service
 from .prometheus import PrometheusRule, ServiceMonitor
@@ -117,7 +117,7 @@ class Workload(KubernetesResource):
         affinity = self.root.spec.template.spec.affinity
         if config.prefer_pods_in_node_with_expression and not config.node_selector:
             affinity.nodeAffinity.setdefault(
-                "preferredDuringSchedulingIgnoredDuringExecutio", []
+                "preferredDuringSchedulingIgnoredDuringExecution", []
             )
             affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution.append(
                 {
@@ -137,7 +137,7 @@ class Workload(KubernetesResource):
                     "podAffinityTerm": {
                         "labelSelector": {
                             "matchExpressions": [
-                                {"key": "app", "operator": "In", "values": [name]}
+                                {"key": "name", "operator": "In", "values": [name]}
                             ]
                         },
                         "topologyKey": "kubernetes.io/hostname",
@@ -155,7 +155,7 @@ class Workload(KubernetesResource):
                     "podAffinityTerm": {
                         "labelSelector": {
                             "matchExpressions": [
-                                {"key": "app", "operator": "In", "values": [name]}
+                                {"key": "name", "operator": "In", "values": [name]}
                             ]
                         },
                         "topologyKey": "topology.kubernetes.io/zone",
@@ -217,6 +217,23 @@ class Workload(KubernetesResource):
                 },
             }
         )
+
+    def add_checksum_annotations(self, secrets: dict, config_maps: dict):
+        # Only apply to Deployments, StatefulSets, and DaemonSets
+        if not isinstance(self, (Deployment, StatefulSet, DaemonSet)):
+            return
+
+        template = self.root.spec.template
+        template.metadata = template.get("metadata", {})
+        template.metadata.annotations = template.metadata.get("annotations", {})
+
+        for name, secret in secrets.items():
+            if hasattr(secret, "get_checksum"):
+                template.metadata.annotations[f"checksum/{name}"] = secret.get_checksum()
+
+        for name, config in config_maps.items():
+            if hasattr(config, "get_checksum"):
+                template.metadata.annotations[f"checksum/{name}"] = config.get_checksum()
 
 
 class CloudRunService(CloudRunResource):
@@ -338,7 +355,7 @@ class Container(BaseModel):
     @staticmethod
     def find_key_in_config(key, configs):
         for name, config in configs.items():
-            if key in config.data.keys():
+            if key in config.data or key in config.string_data:
                 return name
         raise (
             BaseException(
@@ -504,6 +521,7 @@ class PodSecurityPolicy(KubernetesResource):
     apply_patches=[
         "generators.manifest.default_config",
         'applications."{application}".component_defaults',
+        'generators.manifest.resource_defaults.{type}'
     ],
 )
 class Components(kgenlib.BaseStore):
@@ -521,12 +539,14 @@ class Components(kgenlib.BaseStore):
         if config_attr and getattr(self.config, config_attr):
             spec = spec or getattr(self.config, config_attr, {})
             name = name or self.name
+
             component = component_class(
                 name=name, config=self.config, spec=spec, workload=workload, **kwargs
             )
             self.add(component)
             logger.debug(f"Added component {component.root.metadata} for {self.name}.")
             return component
+
 
     def _generate_and_add_multiple_objects(
         self, generating_class, config_attr, workload
@@ -589,6 +609,20 @@ class Components(kgenlib.BaseStore):
             ComponentSecret, "secrets", workload=workload
         )
 
+        # Add checksum annotations to workload
+        if config.checksum_annotation:
+            secrets = {
+                o.object_name: o
+                for o in self.get_content_list()
+                if isinstance(o, ComponentSecret)
+            }
+            configs = {
+                o.object_name: o
+                for o in self.get_content_list()
+                if isinstance(o, ComponentConfig)
+            }
+            workload.add_checksum_annotations(secrets, configs)
+
         self._add_component(PodDisruptionBudget, "pdb_min_available", workload=workload)
         self._add_component(HorizontalPodAutoscaler, "hpa", workload=workload)
         self._add_component(VerticalPodAutoscaler, "vpa", workload=workload)
@@ -630,14 +664,17 @@ class Components(kgenlib.BaseStore):
                     self._add_component(
                         ClusterRoleBinding, "cluster_role", role=role, sa=sa
                     )
+        self._add_component(BackendConfig, "backend_config", spec=self.config.backend_config)
+        self._add_component(FrontendConfig, "frontend_config", spec=self.config.frontend_config)
 
-        self._add_component(BackendConfig, "backend_config")
+
 
         # Handling a special case where pdb_min_available or auto_pdb is set, but config.type isn't "job"
         if self.config.type != "job" and (
             self.config.pdb_min_available or self.config.auto_pdb
         ):
-            self._add_component(PodDisruptionBudget, workload=workload)
+            config_attr = "pdb_min_available" if self.config.pdb_min_available else "auto_pdb"
+            self._add_component(PodDisruptionBudget, config_attr, workload=workload)
 
         self.add(workload)
 
