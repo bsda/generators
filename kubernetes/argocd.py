@@ -14,7 +14,7 @@ class ArgoCDApplicationConfigSpec(KubernetesResourceSpec):
     source: dict
     sync_policy: dict = None
     ignore_differences: list[dict] = None
-    info: dict = None
+    info: list[dict] = None
 
 
 class ArgoCDApplication(KubernetesResource):
