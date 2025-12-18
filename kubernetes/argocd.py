@@ -112,7 +112,8 @@ class GenArgoCDProject(kgenlib.BaseStore):
         name = config.get("name", self.name)
 
         self.add(ArgoCDProject(name=name, namespace=namespace, config=config))
-        self.add(Namespace(name=f"argocd-project-{name}", config=config))
+        # TODO Make this optional
+        # self.add(Namespace(name=f"argocd-project-{name}", config=config))
 
 
 @kgenlib.register_generator(
