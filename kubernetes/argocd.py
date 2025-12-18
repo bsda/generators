@@ -14,6 +14,7 @@ class ArgoCDApplicationConfigSpec(KubernetesResourceSpec):
     source: dict
     sync_policy: dict = None
     ignore_differences: list[dict] = None
+    info: dict = None
 
 
 class ArgoCDApplication(KubernetesResource):
@@ -32,6 +33,7 @@ class ArgoCDApplication(KubernetesResource):
         self.root.spec.syncPolicy = self.config.sync_policy
 
         self.root.spec.ignoreDifferences = self.config.ignore_differences
+        self.root.spec.info = self.config.info
 
         self.namespace = (
             self.config.namespace or f"argocd-project-{self.config.project}"
