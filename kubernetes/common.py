@@ -358,10 +358,40 @@ class VPAConfigSpec(kgenlib.BaseModel):
     update_mode: str = "Auto"
     resource_policy: Dict[str, List[Dict]] = {}
 
+class HPAScalingPolicyType(StrEnum):
+    PERCENT = "Percent"
+    PODS = "Pods"
+
+
+class HPASelectPolicy(StrEnum):
+    MAX = "Max"
+    MIN = "Min"
+    DISABLED = "Disabled"
+
+
+class HPAScalingPolicySpec(kgenlib.BaseModel):
+    type: HPAScalingPolicyType
+    value: int
+    period_seconds: int
+
+
+class HPAScalingRulesSpec(kgenlib.BaseModel):
+    stabilization_window_seconds: Optional[int] = None
+    policies: Optional[List[HPAScalingPolicySpec]] = None
+    select_policy: Optional[HPASelectPolicy] = None
+    tolerance: Optional[float] = None
+
+
+class HPABehaviorSpec(kgenlib.BaseModel):
+    scale_down: Optional[HPAScalingRulesSpec] = None
+    scale_up: Optional[HPAScalingRulesSpec] = None
+
+
 class HPAConfigSpec(kgenlib.BaseModel):
     min_replicas: Optional[int] = None
     max_replicas: Optional[int] = None
     metrics: List[Dict[str, Any]] = []
+    behavior: Optional[HPABehaviorSpec] = None
 
 class ServiceMonitororConfigSpec(kgenlib.BaseModel):
     endpoints: list = []
