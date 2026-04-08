@@ -142,7 +142,7 @@ class Workload(KubernetesResource):
                         },
                         "topologyKey": "kubernetes.io/hostname",
                     },
-                    "weight": 1,
+                    "weight": 40,
                 }
             )
 
@@ -160,7 +160,7 @@ class Workload(KubernetesResource):
                         },
                         "topologyKey": "topology.kubernetes.io/zone",
                     },
-                    "weight": 1,
+                    "weight": 80,
                 }
             )
 

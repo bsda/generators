@@ -129,6 +129,10 @@ class SharedConfig(KubernetesResource):
         self.post_setup()
         self.versioning()
 
+        # Add checksum annotation to the resource itself so ArgoCD detects
+        # changes even when ignoreDifferences hides /data and /stringData.
+        self.add_annotation("checksum/data", self.get_checksum())
+
         if self.workload:
             self.add_label("name", self.workload.root.metadata.name)
             self.workload.add_volumes_for_object(self)
