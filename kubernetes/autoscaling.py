@@ -77,7 +77,7 @@ class VerticalPodAutoscaler(KubernetesResource):
 
 class HorizontalPodAutoscaler(KubernetesResource):
     kind: str = "HorizontalPodAutoscaler"
-    api_version: str = "autoscaling.k8s.io/v2"
+    api_version: str = "autoscaling/v2"
 
     def body(self):
         super().body()
@@ -90,6 +90,7 @@ class HorizontalPodAutoscaler(KubernetesResource):
         self.root.spec.minReplicas = config.hpa.min_replicas
         self.root.spec.maxReplicas = config.hpa.max_replicas
         self.root.spec.metrics = config.hpa.metrics
+        self.root.spec.behavior = config.hpa.behavior
 
         # remove replica from workload because HPA is managing it
         workload.root.spec.pop("replicas")

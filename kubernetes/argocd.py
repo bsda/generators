@@ -14,6 +14,7 @@ class ArgoCDApplicationConfigSpec(KubernetesResourceSpec):
     source: dict
     sync_policy: dict = None
     ignore_differences: list[dict] = None
+    info: list[dict] = None
 
 
 class ArgoCDApplication(KubernetesResource):
@@ -32,6 +33,7 @@ class ArgoCDApplication(KubernetesResource):
         self.root.spec.syncPolicy = self.config.sync_policy
 
         self.root.spec.ignoreDifferences = self.config.ignore_differences
+        self.root.spec.info = self.config.info
 
         self.namespace = (
             self.config.namespace or f"argocd-project-{self.config.project}"
@@ -110,7 +112,8 @@ class GenArgoCDProject(kgenlib.BaseStore):
         name = config.get("name", self.name)
 
         self.add(ArgoCDProject(name=name, namespace=namespace, config=config))
-        self.add(Namespace(name=f"argocd-project-{name}", config=config))
+        # TODO Make this optional
+        # self.add(Namespace(name=f"argocd-project-{name}", config=config))
 
 
 @kgenlib.register_generator(

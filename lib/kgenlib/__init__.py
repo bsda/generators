@@ -341,7 +341,6 @@ class PatchMutationSpec(BaseModel):
     patch: dict
     conditions: MutationCondition
 
-
 class BundleMutationSpec(BaseModel):
     filename: str
     conditions: MutationCondition
@@ -444,6 +443,7 @@ class BaseContent(GeneratorClass):
                 self.prune = action.prune
                 if action.break_:
                     break
+
         for action in mutations.bundle:
             if self.match(action.conditions):
                 try:
@@ -465,7 +465,40 @@ class BaseContent(GeneratorClass):
         return True
 
     def patch(self, patch):
-        self.root.merge_update(Dict(patch), box_merge_lists="extend")
+        """
+        Apply a patch to the content, supporting string formatting with content values.
+
+        This method applies the provided patch to the current content. If the patch
+        contains string values that include formatting placeholders like "{content.field}",
+        it will attempt to format them using values from the content.
+
+        Args:
+            patch (dict): The patch to apply to the content
+        """
+        # Create a deep copy of the patch to avoid modifying the original
+        formatted_patch = Dict(patch.copy())
+
+        # Process the patch dictionary to format any strings
+        self._format_patch_values(formatted_patch)
+
+        # Apply the formatted patch
+        self.root.merge_update(formatted_patch, box_merge_lists="extend")
+
+    def _format_patch_values(self, patch_dict):
+        """
+        Recursively formats string values in a patch dictionary.
+
+        Args:
+            patch_dict (dict): The patch dictionary to process
+        """
+        for key, value in patch_dict.items():
+            if isinstance(value, dict):
+                self._format_patch_values(value)
+            elif isinstance(value, str) and "{content." in value:
+                try:
+                    patch_dict[key] = value.format(content=self)
+                except (AttributeError, KeyError) as e:
+                    logger.debug(f"Could not format '{value}': {e}")
 
     def regex_patch(self, patch):
         if not isinstance(patch, dict):
@@ -478,7 +511,6 @@ class BaseContent(GeneratorClass):
 
         patched_dict = yaml.safe_load(yaml_dump)
         self.parse(Dict(patched_dict))
-
 
 class BaseStore(GeneratorClass):
     content_list: List[BaseContent] = []
@@ -732,12 +764,35 @@ class BaseGenerator:
             logger.debug(
                 f"Running global generator {func.__name__} with activation path {activation_path}"
             )
-            for _, inventory in self.global_inventory.items():
-                self.expand_and_run(
-                    generator_function=func,
-                    generator_params=params,
-                    inventory=inventory,
-                )
+
+            # Get the current target name for global_target filtering
+            current_target_name = current_target.get()
+
+            for target_name, inventory in self.global_inventory.items():
+
+                # For other targets, check global_target parameter
+                inventory_global_target = findpath(inventory.parameters, "global_target")
+
+                # Process if: global_target not set/empty (backward compatibility)
+                # OR global_target matches current target
+                # OR it's the current target
+                if (not inventory_global_target
+                        or inventory_global_target == current_target_name
+                        or target_name == current_target_name):
+                    logger.debug(
+                        f"Processing inventory {target_name} "
+                        f"(global_target={inventory_global_target or 'not set'})"
+                    )
+                    self.expand_and_run(
+                        generator_function=func,
+                        generator_params=params,
+                        inventory=inventory,
+                    )
+                else:
+                    logger.debug(
+                        f"Skipping inventory {target_name} (global_target={inventory_global_target}) "
+                        f"- not listening to current target {current_target_name}"
+                    )
         else:
             logger.debug(
                 f"Skipping global generator {func.__name__} with params {params}"

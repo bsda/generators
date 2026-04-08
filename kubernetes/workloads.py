@@ -142,7 +142,7 @@ class Workload(KubernetesResource):
                         },
                         "topologyKey": "kubernetes.io/hostname",
                     },
-                    "weight": 1,
+                    "weight": 40,
                 }
             )
 
@@ -160,7 +160,7 @@ class Workload(KubernetesResource):
                         },
                         "topologyKey": "topology.kubernetes.io/zone",
                     },
-                    "weight": 1,
+                    "weight": 80,
                 }
             )
 
@@ -217,6 +217,23 @@ class Workload(KubernetesResource):
                 },
             }
         )
+
+    def add_checksum_annotations(self, secrets: dict, config_maps: dict):
+        # Only apply to Deployments, StatefulSets, and DaemonSets
+        if not isinstance(self, (Deployment, StatefulSet, DaemonSet)):
+            return
+
+        template = self.root.spec.template
+        template.metadata = template.get("metadata", {})
+        template.metadata.annotations = template.metadata.get("annotations", {})
+
+        for name, secret in secrets.items():
+            if hasattr(secret, "get_checksum"):
+                template.metadata.annotations[f"checksum/{name}"] = secret.get_checksum()
+
+        for name, config in config_maps.items():
+            if hasattr(config, "get_checksum"):
+                template.metadata.annotations[f"checksum/{name}"] = config.get_checksum()
 
 
 class CloudRunService(CloudRunResource):
@@ -575,11 +592,10 @@ class Components(kgenlib.BaseStore):
             workload = StatefulSet(name=name, config=config.model_dump())
         elif config.type == WorkloadTypes.DAEMONSET:
             workload = DaemonSet(name=name, config=config.model_dump())
+        elif config.type == WorkloadTypes.CRONJOB:
+            workload = CronJob(name=name, config=config.model_dump())
         elif config.type == WorkloadTypes.JOB:
-            if config.schedule:
-                workload = CronJob(name=name, config=config.model_dump())
-            else:
-                workload = Job(name=name, config=config.model_dump())
+            workload = Job(name=name, config=config.model_dump())
         elif config.type == WorkloadTypes.CLOUD_RUN_SERVICE:
             workload = CloudRunService(name=name, config=config.model_dump())
         else:
@@ -591,6 +607,20 @@ class Components(kgenlib.BaseStore):
         self._generate_and_add_multiple_objects(
             ComponentSecret, "secrets", workload=workload
         )
+
+        # Add checksum annotations to workload
+        if config.checksum_annotation:
+            secrets = {
+                o.object_name: o
+                for o in self.get_content_list()
+                if isinstance(o, ComponentSecret)
+            }
+            configs = {
+                o.object_name: o
+                for o in self.get_content_list()
+                if isinstance(o, ComponentConfig)
+            }
+            workload.add_checksum_annotations(secrets, configs)
 
         self._add_component(PodDisruptionBudget, "pdb_min_available", workload=workload)
         self._add_component(HorizontalPodAutoscaler, "hpa", workload=workload)
@@ -637,8 +667,8 @@ class Components(kgenlib.BaseStore):
         self._add_component(FrontendConfig, "frontend_config", spec=self.config.frontend_config)
 
 
-        # Handling a special case where pdb_min_available or auto_pdb is set, but config.type isn't "job"
-        if self.config.type != "job" and (
+        # Handling a special case where pdb_min_available or auto_pdb is set, but config.type isn't "job" or "cronjob"
+        if (self.config.type != WorkloadTypes.JOB and self.config.type != WorkloadTypes.CRONJOB)  and (
             self.config.pdb_min_available or self.config.auto_pdb
         ):
             config_attr = "pdb_min_available" if self.config.pdb_min_available else "auto_pdb"
